@@ -1,0 +1,2 @@
+# rating-service
+Rating Microservice
