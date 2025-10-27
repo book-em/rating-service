@@ -30,7 +30,7 @@ var (
 )
 
 func syncDatabase() {
-
+	dB.AutoMigrate(&internal.Rating{})
 }
 
 func connectToDb() {
