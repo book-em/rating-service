@@ -16,6 +16,8 @@ func (r *Route) Route(rg *gin.RouterGroup) {
 	rg.POST("/ratings/:id/room", r.handler.createRoomRating)
 	rg.DELETE("/ratings/:id/host", r.handler.deleteHostRating)
 	rg.DELETE("/ratings/:id/room", r.handler.deleteRoomRating)
+	rg.GET("/ratings/all/:id/host", r.handler.getHostRatings)
+	rg.GET("/ratings/all/:id/room", r.handler.getRoomRatings)
 
 }
 
@@ -171,4 +173,39 @@ func (h *Handler) deleteRoomRating(ctx *gin.Context) {
 		return
 	}
 	ctx.Status(http.StatusNoContent)
+}
+
+
+func (h *Handler) getHostRatings(ctx *gin.Context) {
+	util.TEL.Push(ctx.Request.Context(), "get-host-ratings-api")
+	defer util.TEL.Pop()
+
+	idParam := ctx.Param("id")
+	hostID64, err := strconv.ParseUint(idParam, 10, 64)
+	if err != nil || hostID64 == 0 {
+		util.TEL.Error("invalid host id", err, "param", idParam)
+		AbortError(ctx, ErrBadRequestCustom("invalid id"))
+		return
+	}
+
+	res, err := h.service.GetHostRatings(util.TEL.Ctx(), AuthContext{}, uint(hostID64))
+	if err != nil { AbortError(ctx, err); return }
+	ctx.JSON(http.StatusOK, res)
+}
+
+func (h *Handler) getRoomRatings(ctx *gin.Context) {
+	util.TEL.Push(ctx.Request.Context(), "get-room-ratings-api")
+	defer util.TEL.Pop()
+
+	idParam := ctx.Param("id")
+	roomID64, err := strconv.ParseUint(idParam, 10, 64)
+	if err != nil || roomID64 == 0 {
+		util.TEL.Error("invalid room id", err, "param", idParam)
+		AbortError(ctx, ErrBadRequestCustom("invalid id"))
+		return
+	}
+
+	res, err := h.service.GetRoomRatings(util.TEL.Ctx(), AuthContext{}, uint(roomID64))
+	if err != nil { AbortError(ctx, err); return }
+	ctx.JSON(http.StatusOK, res)
 }
