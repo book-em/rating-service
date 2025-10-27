@@ -26,7 +26,14 @@ go.work.sum
 
 # env file
 .env
+.override.env
 
 # Editor/IDE
 # .idea/
 # .vscode/
+
+test-out/
+
+# macOS system files
+.DS_Store
+**/.DS_Store
