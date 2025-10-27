@@ -22,11 +22,11 @@ services:
       JWT_PUBLIC_KEY_PATH: /app/keys/public_key.pem
     volumes:
       - go-mod-cache:/go/pkg/mod
-      - ${rating_SERVICE_PATH}/keys/public_key.pem:/app/keys/public_key.pem:ro
+      - ${RATING_SERVICE_PATH}/keys/public_key.pem:/app/keys/public_key.pem:ro
 
   rating-service:
     build:
-      context: ${rating_SERVICE_PATH}/src
+      context: ${RATING_SERVICE_PATH}/src
       dockerfile: Dockerfile
     image: rating-service-test
     ports:
@@ -43,7 +43,7 @@ services:
       rating-db:
         condition: service_healthy
     volumes:
-      - ${rating_SERVICE_PATH}/keys/public_key.pem:/app/keys/public_key.pem:ro
+      - ${RATING_SERVICE_PATH}/keys/public_key.pem:/app/keys/public_key.pem:ro
 
     healthcheck:
       test: ["CMD-SHELL", "wget --spider --tries=1 --no-verbose http://rating-service:8080/healthz || exit 1"]
