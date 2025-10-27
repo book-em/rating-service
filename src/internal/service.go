@@ -20,6 +20,8 @@ type Service interface {
     CreateRoomRating(ctx context.Context, authctx AuthContext, dto CreateRatingDTO) (*Rating, error)
 	DeleteHostRating(ctx context.Context, authctx AuthContext, targetID uint) error 
 	DeleteRoomRating(ctx context.Context, authctx AuthContext, targetID uint) error
+	GetRoomRatings(ctx context.Context, _ AuthContext, roomID uint) (*RatingsWithAverageDTO, error) 
+	GetHostRatings(ctx context.Context, _ AuthContext, hostID uint) (*RatingsWithAverageDTO, error) 
 }
 
 type service struct {
@@ -189,3 +191,75 @@ func (s *service) deleteRating(ctx context.Context, authctx AuthContext, rt Rati
 	util.TEL.Info("rating deleted", "target_type", string(rt), "target_id", targetID, "rater_id", callerID)
 	return nil
 }
+
+func (s *service) GetHostRatings(ctx context.Context, _ AuthContext, hostID uint) (*RatingsWithAverageDTO, error) {
+	return s.getRatings(ctx, Host, hostID)
+}
+
+func (s *service) GetRoomRatings(ctx context.Context, _ AuthContext, roomID uint) (*RatingsWithAverageDTO, error) {
+	return s.getRatings(ctx, Room, roomID)
+}
+
+func (s *service) getRatings(ctx context.Context, rt RatingType, targetID uint) (*RatingsWithAverageDTO, error) {
+	util.TEL.Push(ctx, "get-ratings")
+	defer util.TEL.Pop()
+
+	switch rt {
+	case Host:
+		u, err := s.userClient.FindById(util.TEL.Ctx(), targetID)
+		if err != nil {
+			util.TEL.Error("host not found", err, "id", targetID)
+			return nil, ErrNotFound("host", targetID)
+		}
+		if u.Role != string(util.Host) {
+			return nil, ErrBadRequestCustom("target user is not a host")
+		}
+	case Room:
+		room, err := s.roomClient.FindById(util.TEL.Ctx(), targetID)
+		if err != nil || room.ID == 0 {
+			util.TEL.Error("room not found", err, "id", targetID)
+			return nil, ErrNotFound("room", targetID)
+		}
+	default:
+		return nil, ErrBadRequestCustom("invalid rating type")
+	}
+
+	ratings, err := s.repo.FindAllRatings(rt, targetID)
+	if err != nil {
+		util.TEL.Error("failed fetching ratings", err)
+		return nil, err
+	}
+	avg, err := s.repo.GetAverageRating(rt, targetID)
+	if err != nil {
+		util.TEL.Error("failed computing average", err)
+		return nil, err
+	}
+
+	out := make([]RatingDTO, 0, len(ratings))
+	for _, r := range ratings {
+		user, err := s.userClient.FindById(util.TEL.Ctx(), r.RaterID)
+		username := ""
+		if err != nil {
+			util.TEL.Error("failed fetching rater user", err, "rater_id", r.RaterID)
+		} else {
+			username = user.Username
+		}
+
+		t := r.UpdatedAt
+		if t.IsZero() {
+			t = r.CreatedAt
+		}
+		out = append(out, RatingDTO{
+			Username: username,
+			Score:    r.Score,
+			Comment:  r.Comment,
+			Time:     t,
+		})
+	}
+
+	return &RatingsWithAverageDTO{
+		Average: avg,
+		Ratings: out,
+	}, nil
+}
+
