@@ -18,6 +18,8 @@ type AuthContext struct {
 type Service interface {
     CreateHostRating(ctx context.Context, authctx AuthContext, dto CreateRatingDTO) (*Rating, error)
     CreateRoomRating(ctx context.Context, authctx AuthContext, dto CreateRatingDTO) (*Rating, error)
+	DeleteHostRating(ctx context.Context, authctx AuthContext, targetID uint) error 
+	DeleteRoomRating(ctx context.Context, authctx AuthContext, targetID uint) error
 }
 
 type service struct {
@@ -127,4 +129,63 @@ func (s *service) createRating(ctx context.Context, authctx AuthContext, rt Rati
 	}
 
 	return r, nil
+}
+
+func (s *service) DeleteHostRating(ctx context.Context, authctx AuthContext, targetID uint) error {
+	return s.deleteRating(ctx, authctx, Host, targetID)
+}
+
+func (s *service) DeleteRoomRating(ctx context.Context, authctx AuthContext, targetID uint) error {
+	return s.deleteRating(ctx, authctx, Room, targetID)
+}
+
+func (s *service) deleteRating(ctx context.Context, authctx AuthContext, rt RatingType, targetID uint) error {
+	callerID := authctx.CallerID
+	util.TEL.Info("guest wants to delete a rating", nil, "caller_id", callerID, "target_type", string(rt), "target_id", targetID)
+
+	util.TEL.Push(ctx, "validate-user-role")
+	defer util.TEL.Pop()
+
+	util.TEL.Debug("fetch user by id", nil, "id", callerID)
+	user, err := s.userClient.FindById(util.TEL.Ctx(), callerID)
+	if err != nil {
+		util.TEL.Error("user not found", err, "id", callerID)
+		return ErrUnauthenticated
+	}
+	if user.Role != string(util.Guest) {
+		util.TEL.Error("user role not allowed to delete rating", nil, "role", user.Role)
+		return ErrUnauthorized
+	}
+
+	util.TEL.Push(ctx, "validate-input")
+	defer util.TEL.Pop()
+	if targetID == 0 {
+		util.TEL.Error("target id is empty", nil)
+		return ErrBadRequestCustom("targetId is required")
+	}
+
+	// Ensure rating exists & belongs to caller
+	util.TEL.Push(ctx, "find-rating")
+	defer util.TEL.Pop()
+
+	r, err := s.repo.FindRatingByRater(rt, targetID, callerID)
+	if err != nil {
+		util.TEL.Error("rating not found for caller", err, "target_id", targetID, "rater_id", callerID)
+		return ErrNotFound("rating", targetID)
+	}
+	if r.RaterID != callerID {
+		util.TEL.Error("caller is not the author of rating", nil, "caller_id", callerID, "rater_id", r.RaterID)
+		return ErrUnauthorized
+	}
+
+	util.TEL.Push(ctx, "delete-rating-in-db")
+	defer util.TEL.Pop()
+
+	if err := s.repo.DeleteRating(rt, targetID, callerID); err != nil {
+		util.TEL.Error("failed to delete rating", err)
+		return err
+	}
+
+	util.TEL.Info("rating deleted", "target_type", string(rt), "target_id", targetID, "rater_id", callerID)
+	return nil
 }
