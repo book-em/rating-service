@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
@@ -28,25 +29,50 @@ func NewReservationClient() ReservationClient {
 }
 
 func (c *reservationClient) CanUserRateHost(ctx context.Context, guestID, hostID uint) (bool, error) {
-	util.TEL.Info("eligibility: can user rate host", "guest_id", guestID, "host_id", hostID)
+	return c.doEligibilityGET(ctx, "/reservations/guest-stayed-with-host", map[string]string{
+		"guestId": fmt.Sprintf("%d", guestID),
+		"hostId":  fmt.Sprintf("%d", hostID),
+	})
+}
 
-	url := fmt.Sprintf("%s/reservations/guest-stayed-with-host?guestId=%d&hostId=%d", c.baseURL, guestID, hostID)
-	req, err := http.NewRequest(http.MethodGet, url, nil)
+func (c *reservationClient) CanUserRateRoom(ctx context.Context, guestID, roomID uint) (bool, error) {
+	return c.doEligibilityGET(ctx, "/reservations/guest-stayed-in-room", map[string]string{
+		"guestId": fmt.Sprintf("%d", guestID),
+		"roomId":  fmt.Sprintf("%d", roomID),
+	})
+}
+
+func (c *reservationClient) doEligibilityGET(ctx context.Context, path string, q map[string]string) (bool, error) {
+	util.TEL.Info("eligibility request", "path", path, "query", q)
+
+	u, err := url.Parse(c.baseURL + path)
 	if err != nil {
-		util.TEL.Error("cannot create eligibility request", err)
+		util.TEL.Error("invalid base url or path", err, "base", c.baseURL, "path", path)
+		return false, err
+	}
+	qs := u.Query()
+	for k, v := range q {
+		qs.Set(k, v)
+	}
+	u.RawQuery = qs.Encode()
+
+	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
+	if err != nil {
+		util.TEL.Error("cannot create http request", err, "url", u.String())
 		return false, err
 	}
 	otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(req.Header))
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		util.TEL.Error("eligibility request failed", err)
+		util.TEL.Error("http do failed", err, "url", u.String())
 		return false, err
 	}
+	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		util.TEL.Error("eligibility non-200", nil, "status", resp.StatusCode, "url", url)
-		return false, fmt.Errorf("eligibility host failed: %d", resp.StatusCode)
+		util.TEL.Error("non-200 eligibility", nil, "status", resp.StatusCode, "url", u.String())
+		return false, fmt.Errorf("eligibility failed: %d", resp.StatusCode)
 	}
 
 	bodyBytes, err := io.ReadAll(resp.Body)
@@ -62,43 +88,5 @@ func (c *reservationClient) CanUserRateHost(ctx context.Context, guestID, hostID
 		util.TEL.Error("could not unmarshall JSON", err)
 		return false, err
 	}
-	return obj.Eligible, nil
-}
-
-func (c *reservationClient) CanUserRateRoom(ctx context.Context, guestID, roomID uint) (bool, error) {
-	util.TEL.Info("eligibility: can user rate room", "guest_id", guestID, "room_id", roomID)
-
-	url := fmt.Sprintf("%s/reservations/guest-stayed-in-room?guestId=%d&roomId=%d", c.baseURL, guestID, roomID)
-	req, err := http.NewRequest(http.MethodGet, url, nil)
-	if err != nil {
-		util.TEL.Error("cannot create eligibility request", err)
-		return false, err
-	}
-	otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(req.Header))
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		util.TEL.Error("eligibility request failed", err)
-		return false, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		util.TEL.Error("eligibility non-200", nil, "status", resp.StatusCode, "url", url)
-		return false, fmt.Errorf("eligibility room failed: %d", resp.StatusCode)
-	}
-
-	bodyBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		util.TEL.Error("could not parse bytes from response", err)
-		return false, err
-	}
-
-	var obj EligibilityDTO
-	if err := json.Unmarshal(bodyBytes, &obj); err != nil {
-		util.TEL.Error("could not unmarshal JSON", err)
-		return false, err
-	}
-
 	return obj.Eligible, nil
 }
