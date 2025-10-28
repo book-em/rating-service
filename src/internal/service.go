@@ -118,6 +118,16 @@ func (s *service) createRating(ctx context.Context, authctx AuthContext, rt Rati
 			util.TEL.Error("room id missing in response", nil)
 			return nil, ErrNotFound("room", dto.TargetID)
 		}
+		util.TEL.Debug("check if guest is eligible to rate room", nil, "guest_id", callerID, "room_id", dto.TargetID)
+		ok, err := s.reservationClient.CanUserRateRoom(util.TEL.Ctx(), callerID, dto.TargetID)
+		if err != nil {
+			util.TEL.Error("eligibility check failed (room)", err, "guest_id", callerID, "room_id", dto.TargetID)
+			return nil, ErrBadRequestCustom("eligibility check failed by reservation-service")
+		}
+		if !ok {
+			util.TEL.Error("guest not eligible to rate room", nil, "guest_id", callerID, "room_id", dto.TargetID)
+			return nil, ErrBadRequestCustom("guest not eligible to rate room")
+		}
 	default:
 		return nil, ErrBadRequestCustom("invalid rating type")
 	}
