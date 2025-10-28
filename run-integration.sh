@@ -50,6 +50,9 @@ if [[ "$mode" == "ci" ]]; then
 
   echo "Cloning $ROOM_SERVICE_REPO branch $ROOM_SERVICE_BRANCH into $ROOM_SERVICE_PATH"
   git clone --branch "$ROOM_SERVICE_BRANCH" "$ROOM_SERVICE_REPO" "$ROOM_SERVICE_PATH"
+
+  echo "Cloning $RESERVATION_SERVICE_REPO branch $RESERVATION_SERVICE_BRANCH into $RESERVATION_SERVICE_PATH"
+  git clone --branch "$RESERVATION_SERVICE_BRANCH" "$RESERVATION_SERVICE_REPO" "$RESERVATION_SERVICE_PATH"
 fi
 
 # Run integration tests
