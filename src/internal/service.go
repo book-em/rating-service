@@ -10,7 +10,7 @@ import (
 	"context"
 )
 
-// AuthContext is used in cases where callerID is not enoug
+// AuthContext is used in cases where callerID is not enough
 type AuthContext struct {
 	CallerID uint
 	JWT      string
