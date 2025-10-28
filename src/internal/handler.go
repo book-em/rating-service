@@ -5,207 +5,130 @@ import (
 	"net/http"
 	"github.com/gin-gonic/gin"
 	"strconv"   
+	"strings"
+
 )
 
 type Route struct{ handler Handler }
 
 func NewRoute(handler Handler) *Route { return &Route{handler} }
 
-func (r *Route) Route(rg *gin.RouterGroup) {
-	rg.POST("/ratings/:id/host", r.handler.createHostRating)
-	rg.POST("/ratings/:id/room", r.handler.createRoomRating)
-	rg.DELETE("/ratings/:id/host", r.handler.deleteHostRating)
-	rg.DELETE("/ratings/:id/room", r.handler.deleteRoomRating)
-	rg.GET("/ratings/all/:id/host", r.handler.getHostRatings)
-	rg.GET("/ratings/all/:id/room", r.handler.getRoomRatings)
-
+func (r *Route) Route(g *gin.RouterGroup) {
+	g.POST("/ratings/:id", r.handler.createRating)           // ?type=host|room
+	g.DELETE("/ratings/:id", r.handler.deleteRating)         // ?type=host|room
+	g.GET("/ratings/all/:id", r.handler.getRatingsWithAvg)   // ?type=host|room
 }
+
 
 type Handler struct{ service Service }
 
 func NewHandler(s Service) Handler { return Handler{s} }
 
-func (h *Handler) createHostRating(ctx *gin.Context) {
-	util.TEL.Push(ctx.Request.Context(), "create-host-rating-api")
+func (h *Handler) createRating(ctx *gin.Context) {
+	util.TEL.Push(ctx.Request.Context(), "create-rating-api")
 	defer util.TEL.Pop()
 
-	jwtString, err := util.GetJwtString(ctx)
-	if err != nil {
-		util.TEL.Error("failed fetching JWT string", err)
-		AbortError(ctx, ErrUnauthenticated)
-		return
-	}
-	jwt, err := util.GetJwt(ctx)
-	if err != nil {
-		util.TEL.Error("failed parsing JWT", err)
-		AbortError(ctx, ErrUnauthenticated)
-		return
-	}
-	if jwt.Role != util.Guest {
-		util.TEL.Error("user is not guest", nil, "role", jwt.Role)
-		AbortError(ctx, ErrUnauthorized)
-		return
-	}
+	auth, ok := requireGuestAuth(ctx); if !ok { return }
+
+	rt, ok := parseRatingType(ctx); if !ok { return }
+
+	targetID, ok := parseUintParam(ctx, "id"); if !ok { return }
 
 	var dto CreateRatingDTO
 	if err := ctx.ShouldBindJSON(&dto); err != nil {
-		util.TEL.Error("failed binding JSON", err)
-		AbortError(ctx, ErrBadRequest)
-		return
+		AbortError(ctx, ErrBadRequest); return
 	}
-	idParam := ctx.Param("id")
-	targetID, err := strconv.ParseUint(idParam, 10, 64)
-	if err != nil {
-		util.TEL.Error("invalid target ID", err, "param", idParam)
-		AbortError(ctx, ErrBadRequestCustom("invalid ID"))
-		return
-	}
-dto.TargetID = uint(targetID)
-	rating, err := h.service.CreateHostRating(util.TEL.Ctx(), AuthContext{CallerID: jwt.ID, JWT: jwtString}, dto)
-	if err != nil {
-		util.TEL.Error("failed creating/updating host rating", err)
-		AbortError(ctx, err)
-		return
-	}
+	dto.TargetID = targetID
 
-	ctx.JSON(http.StatusCreated, rating)
+	var (
+		r   *Rating
+		err error
+	)
+	switch rt {
+	case Host:
+		r, err = h.service.CreateHostRating(util.TEL.Ctx(), auth, dto)
+	case Room:
+		r, err = h.service.CreateRoomRating(util.TEL.Ctx(), auth, dto)
+	}
+	if err != nil { AbortError(ctx, err); return }
+
+	ctx.JSON(http.StatusCreated, r)
 }
 
-func (h *Handler) createRoomRating(ctx *gin.Context) {
-	util.TEL.Push(ctx.Request.Context(), "create-room-rating-api")
+func (h *Handler) deleteRating(ctx *gin.Context) {
+	util.TEL.Push(ctx.Request.Context(), "delete-rating-api")
 	defer util.TEL.Pop()
 
-	jwtString, err := util.GetJwtString(ctx)
-	if err != nil {
-		util.TEL.Error("failed fetching JWT string", err)
-		AbortError(ctx, ErrUnauthenticated)
-		return
-	}
-	jwt, err := util.GetJwt(ctx)
-	if err != nil {
-		util.TEL.Error("failed parsing JWT", err)
-		AbortError(ctx, ErrUnauthenticated)
-		return
-	}
-	if jwt.Role != util.Guest {
-		util.TEL.Error("user is not guest", nil, "role", jwt.Role)
-		AbortError(ctx, ErrUnauthorized)
-		return
-	}
+	auth, ok := requireGuestAuth(ctx); if !ok { return }
 
-	var dto CreateRatingDTO
-	if err := ctx.ShouldBindJSON(&dto); err != nil {
-		util.TEL.Error("failed binding JSON", err)
-		AbortError(ctx, ErrBadRequest)
-		return
-	}
-	
-	idParam := ctx.Param("id")
-	targetID, err := strconv.ParseUint(idParam, 10, 64)
-	if err != nil {
-		util.TEL.Error("invalid target ID", err, "param", idParam)
-		AbortError(ctx, ErrBadRequestCustom("invalid ID"))
-		return
-	}
-	dto.TargetID = uint(targetID)
+	rt, ok := parseRatingType(ctx); if !ok { return }
 
-	rating, err := h.service.CreateRoomRating(util.TEL.Ctx(), AuthContext{CallerID: jwt.ID, JWT: jwtString}, dto)
-	if err != nil {
-		util.TEL.Error("failed creating/updating room rating", err)
-		AbortError(ctx, err)
-		return
-	}
+	targetID, ok := parseUintParam(ctx, "id"); if !ok { return }
 
-	ctx.JSON(http.StatusCreated, rating)
-}
-
-func (h *Handler) deleteHostRating(ctx *gin.Context) {
-	util.TEL.Push(ctx.Request.Context(), "delete-host-rating-api")
-	defer util.TEL.Pop()
-
-	jwtString, err := util.GetJwtString(ctx)
-	if err != nil { util.TEL.Error("failed fetching JWT", err); AbortError(ctx, ErrUnauthenticated); return }
-	jwt, err := util.GetJwt(ctx)
-	if err != nil { util.TEL.Error("failed parsing JWT", err); AbortError(ctx, ErrUnauthenticated); return }
-	if jwt.Role != util.Guest {
-		util.TEL.Error("user is not guest", nil, "role", jwt.Role)
-		AbortError(ctx, ErrUnauthorized)
-		return
+	var err error
+	switch rt {
+	case Host:
+		err = h.service.DeleteHostRating(util.TEL.Ctx(), auth, targetID)
+	case Room:
+		err = h.service.DeleteRoomRating(util.TEL.Ctx(), auth, targetID)
 	}
+	if err != nil { AbortError(ctx, err); return }
 
-	idParam := ctx.Param("id")
-	targetID64, err := strconv.ParseUint(idParam, 10, 64)
-	if err != nil || targetID64 == 0 {
-		util.TEL.Error("invalid target id", err, "param", idParam)
-		AbortError(ctx, ErrBadRequestCustom("invalid id"))
-		return
-	}
-	if err := h.service.DeleteHostRating(util.TEL.Ctx(), AuthContext{CallerID: jwt.ID, JWT: jwtString}, uint(targetID64)); err != nil {
-		AbortError(ctx, err)
-		return
-	}
 	ctx.Status(http.StatusNoContent)
 }
 
-func (h *Handler) deleteRoomRating(ctx *gin.Context) {
-	util.TEL.Push(ctx.Request.Context(), "delete-room-rating-api")
+func (h *Handler) getRatingsWithAvg(ctx *gin.Context) {
+	util.TEL.Push(ctx.Request.Context(), "get-ratings-with-avg-api")
 	defer util.TEL.Pop()
 
-	jwtString, err := util.GetJwtString(ctx)
-	if err != nil { util.TEL.Error("failed fetching JWT", err); AbortError(ctx, ErrUnauthenticated); return }
+	rt, ok := parseRatingType(ctx); if !ok { return }
+
+	targetID, ok := parseUintParam(ctx, "id"); if !ok { return }
+
+	var (
+		res *RatingsWithAverageDTO 
+		err error
+	)
+	switch rt {
+	case Host:
+		res, err = h.service.GetHostRatings(util.TEL.Ctx(), AuthContext{}, targetID)
+	case Room:
+		res, err = h.service.GetRoomRatings(util.TEL.Ctx(), AuthContext{}, targetID)
+	}
+	if err != nil { AbortError(ctx, err); return }
+
+	ctx.JSON(http.StatusOK, res) 
+}
+
+
+func parseUintParam(ctx *gin.Context, name string) (uint, bool) {
+	raw := ctx.Param(name)
+	v, err := strconv.ParseUint(raw, 10, 64)
+	if err != nil || v == 0 {
+		AbortError(ctx, ErrBadRequestCustom("invalid "+name))
+		return 0, false
+	}
+	return uint(v), true
+}
+
+func requireGuestAuth(ctx *gin.Context) (AuthContext, bool) {
+	jwtStr, err := util.GetJwtString(ctx)
+	if err != nil { AbortError(ctx, ErrUnauthenticated); return AuthContext{}, false }
 	jwt, err := util.GetJwt(ctx)
-	if err != nil { util.TEL.Error("failed parsing JWT", err); AbortError(ctx, ErrUnauthenticated); return }
-	if jwt.Role != util.Guest {
-		util.TEL.Error("user is not guest", nil, "role", jwt.Role)
-		AbortError(ctx, ErrUnauthorized)
-		return
-	}
-
-	idParam := ctx.Param("id")
-	targetID64, err := strconv.ParseUint(idParam, 10, 64)
-	if err != nil || targetID64 == 0 {
-		util.TEL.Error("invalid target id", err, "param", idParam)
-		AbortError(ctx, ErrBadRequestCustom("invalid id"))
-		return
-	}
-	if err := h.service.DeleteRoomRating(util.TEL.Ctx(), AuthContext{CallerID: jwt.ID, JWT: jwtString}, uint(targetID64)); err != nil {
-		AbortError(ctx, err)
-		return
-	}
-	ctx.Status(http.StatusNoContent)
+	if err != nil { AbortError(ctx, ErrUnauthenticated); return AuthContext{}, false }
+	if jwt.Role != util.Guest { AbortError(ctx, ErrUnauthorized); return AuthContext{}, false }
+	return AuthContext{CallerID: jwt.ID, JWT: jwtStr}, true
 }
 
-
-func (h *Handler) getHostRatings(ctx *gin.Context) {
-	util.TEL.Push(ctx.Request.Context(), "get-host-ratings-api")
-	defer util.TEL.Pop()
-
-	idParam := ctx.Param("id")
-	hostID64, err := strconv.ParseUint(idParam, 10, 64)
-	if err != nil || hostID64 == 0 {
-		util.TEL.Error("invalid host id", err, "param", idParam)
-		AbortError(ctx, ErrBadRequestCustom("invalid id"))
-		return
+func parseRatingType(ctx *gin.Context) (RatingType, bool) {
+	t := strings.ToLower(strings.TrimSpace(ctx.Query("type")))
+	switch t {
+	case string(Host):
+		return Host, true
+	case string(Room):
+		return Room, true
+	default:
+		AbortError(ctx, ErrBadRequestCustom("query param 'type' must be 'host' or 'room'"))
+		return "", false
 	}
-
-	res, err := h.service.GetHostRatings(util.TEL.Ctx(), AuthContext{}, uint(hostID64))
-	if err != nil { AbortError(ctx, err); return }
-	ctx.JSON(http.StatusOK, res)
-}
-
-func (h *Handler) getRoomRatings(ctx *gin.Context) {
-	util.TEL.Push(ctx.Request.Context(), "get-room-ratings-api")
-	defer util.TEL.Pop()
-
-	idParam := ctx.Param("id")
-	roomID64, err := strconv.ParseUint(idParam, 10, 64)
-	if err != nil || roomID64 == 0 {
-		util.TEL.Error("invalid room id", err, "param", idParam)
-		AbortError(ctx, ErrBadRequestCustom("invalid id"))
-		return
-	}
-
-	res, err := h.service.GetRoomRatings(util.TEL.Ctx(), AuthContext{}, uint(roomID64))
-	if err != nil { AbortError(ctx, err); return }
-	ctx.JSON(http.StatusOK, res)
 }
