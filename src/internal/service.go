@@ -3,6 +3,7 @@ package internal
 import (
 	"bookem-rating-service/client/roomclient"
 	"bookem-rating-service/client/userclient"
+	"bookem-rating-service/client/reservationclient"
 	"bookem-rating-service/util"
 
 	"strings"
@@ -28,13 +29,16 @@ type service struct {
 	repo       Repository
 	userClient userclient.UserClient
 	roomClient roomclient.RoomClient
+	reservationClient reservationclient.ReservationClient
 }
 
 func NewService(
 	roomRepo Repository,
 	userClient userclient.UserClient,
-	roomClient roomclient.RoomClient) Service {
-	return &service{roomRepo, userClient, roomClient}
+	roomClient roomclient.RoomClient,
+	reservationClient reservationclient.ReservationClient,
+	) Service {
+	return &service{roomRepo, userClient, roomClient, reservationClient}
 }
 
 func (s *service) CreateHostRating(ctx context.Context, authctx AuthContext, dto CreateRatingDTO) (*Rating, error) {
@@ -92,6 +96,16 @@ func (s *service) createRating(ctx context.Context, authctx AuthContext, rt Rati
 		if host.Role != string(util.Host) {
 			util.TEL.Error("target user is not a host", nil, "role", host.Role)
 			return nil, ErrBadRequestCustom("target user is not a host")
+		}
+		util.TEL.Debug("check if guest is eligible to rate host", nil, "guest_id", callerID, "host_id", dto.TargetID)
+		ok, err := s.reservationClient.CanUserRateHost(util.TEL.Ctx(), callerID, dto.TargetID)
+		if err != nil {
+			util.TEL.Error("eligibility check failed (host)", err, "guest_id", callerID, "host_id", dto.TargetID)
+			return nil, ErrBadRequestCustom("eligibility check failed by reservation-service")
+		}
+		if !ok {
+			util.TEL.Error("guest not eligible to rate host", nil, "guest_id", callerID, "host_id", dto.TargetID)
+			return nil, ErrBadRequestCustom("guest not eligible to rate host")
 		}
 	case Room:
 		util.TEL.Debug("check if room exists", nil, "id", dto.TargetID)
