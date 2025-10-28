@@ -14,6 +14,7 @@ import (
 
 type ReservationClient interface {
 	CanUserRateHost(ctx context.Context, guestID, hostID uint) (bool, error)
+	CanUserRateRoom(ctx context.Context, guestID, roomID uint) (bool, error)
 }
 
 type reservationClient struct {
@@ -61,5 +62,43 @@ func (c *reservationClient) CanUserRateHost(ctx context.Context, guestID, hostID
 		util.TEL.Error("could not unmarshall JSON", err)
 		return false, err
 	}
+	return obj.Eligible, nil
+}
+
+func (c *reservationClient) CanUserRateRoom(ctx context.Context, guestID, roomID uint) (bool, error) {
+	util.TEL.Info("eligibility: can user rate room", "guest_id", guestID, "room_id", roomID)
+
+	url := fmt.Sprintf("%s/reservations/guest-stayed-in-room?guestId=%d&roomId=%d", c.baseURL, guestID, roomID)
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		util.TEL.Error("cannot create eligibility request", err)
+		return false, err
+	}
+	otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(req.Header))
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		util.TEL.Error("eligibility request failed", err)
+		return false, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		util.TEL.Error("eligibility non-200", nil, "status", resp.StatusCode, "url", url)
+		return false, fmt.Errorf("eligibility room failed: %d", resp.StatusCode)
+	}
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		util.TEL.Error("could not parse bytes from response", err)
+		return false, err
+	}
+
+	var obj EligibilityDTO
+	if err := json.Unmarshal(bodyBytes, &obj); err != nil {
+		util.TEL.Error("could not unmarshal JSON", err)
+		return false, err
+	}
+
 	return obj.Eligible, nil
 }
