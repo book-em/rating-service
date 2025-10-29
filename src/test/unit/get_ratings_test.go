@@ -13,7 +13,7 @@ import (
 )
 
 func TestGetHostRatings_Success(t *testing.T) {
-	svc, repo, users, rooms, _ := CreateTestRatingService()
+	svc, repo, users, rooms, _, _ := CreateTestRatingService()
 
 	hostID := uint(22)
 
@@ -56,7 +56,7 @@ func TestGetHostRatings_Success(t *testing.T) {
 }
 
 func TestGetHostRatings_RaterLookupFails_UsernameEmpty(t *testing.T) {
-	svc, repo, users, _, _ := CreateTestRatingService()
+	svc, repo, users, _, _, _ := CreateTestRatingService()
 
 	hostID := uint(22)
 
@@ -88,7 +88,7 @@ func TestGetHostRatings_RaterLookupFails_UsernameEmpty(t *testing.T) {
 }
 
 func TestGetHostRatings_TargetNotFound(t *testing.T) {
-	svc, repo, users, rooms, _ := CreateTestRatingService()
+	svc, repo, users, rooms, _, _ := CreateTestRatingService()
 
 	hostID := uint(999)
 
@@ -107,7 +107,7 @@ func TestGetHostRatings_TargetNotFound(t *testing.T) {
 }
 
 func TestGetHostRatings_TargetNotHostRole(t *testing.T) {
-	svc, repo, users, rooms, _ := CreateTestRatingService()
+	svc, repo, users, rooms, _, _ := CreateTestRatingService()
 
 	hostID := uint(77)
 
@@ -128,7 +128,7 @@ func TestGetHostRatings_TargetNotHostRole(t *testing.T) {
 func TestGetHostRatings_RepoErrors(t *testing.T) {
 	// FindAllRatings error
 	{
-		svc, repo, users, _, _ := CreateTestRatingService() // rooms unused here
+		svc, repo, users, _, _, _ := CreateTestRatingService() // rooms unused here
 		hostID := uint(22)
 
 		users.
@@ -149,7 +149,7 @@ func TestGetHostRatings_RepoErrors(t *testing.T) {
 
 	// GetAverageRating error
 	{
-		svc, repo, users, _, _ := CreateTestRatingService() // rooms unused here
+		svc, repo, users, _, _, _ := CreateTestRatingService() // rooms unused here
 		hostID := uint(22)
 
 		users.
@@ -170,7 +170,7 @@ func TestGetHostRatings_RepoErrors(t *testing.T) {
 }
 
 func TestGetRoomRatings_Success(t *testing.T) {
-	svc, repo, users, rooms, _ := CreateTestRatingService()
+	svc, repo, users, rooms, _, _ := CreateTestRatingService()
 
 	roomID := uint(55)
 
@@ -209,7 +209,7 @@ func TestGetRoomRatings_Success(t *testing.T) {
 }
 
 func TestGetRoomRatings_RoomNotFound(t *testing.T) {
-	svc, repo, _, rooms, _ := CreateTestRatingService()
+	svc, repo, _, rooms, _, _ := CreateTestRatingService()
 
 	roomID := uint(404)
 
