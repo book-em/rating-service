@@ -11,7 +11,7 @@ import (
 )
 
 func TestDeleteHostRating_Success(t *testing.T) {
-	svc, repo, users, _, _ := CreateTestRatingService()
+	svc, repo, users, _, _, _ := CreateTestRatingService()
 
 	auth := internal.AuthContext{CallerID: DefaultGuest.Id, JWT: "jwt"}
 	targetID := uint(22)
@@ -37,7 +37,7 @@ func TestDeleteHostRating_Success(t *testing.T) {
 }
 
 func TestDeleteRoomRating_Success(t *testing.T) {
-	svc, repo, users, _, _ := CreateTestRatingService()
+	svc, repo, users, _, _, _ := CreateTestRatingService()
 
 	auth := internal.AuthContext{CallerID: DefaultGuest.Id, JWT: "jwt"}
 	targetID := uint(33)
@@ -59,7 +59,7 @@ func TestDeleteRoomRating_Success(t *testing.T) {
 }
 
 func TestDeleteRating_Unauthenticated_UserLookupFails(t *testing.T) {
-	svc, _, users, _, _ := CreateTestRatingService()
+	svc, _, users, _, _, _ := CreateTestRatingService()
 
 	auth := internal.AuthContext{CallerID: DefaultGuest.Id, JWT: "jwt"}
 	targetID := uint(44)
@@ -73,7 +73,7 @@ func TestDeleteRating_Unauthenticated_UserLookupFails(t *testing.T) {
 }
 
 func TestDeleteRating_Unauthorized_NotGuest(t *testing.T) {
-	svc, _, users, _, _ := CreateTestRatingService()
+	svc, _, users, _, _, _ := CreateTestRatingService()
 
 	auth := internal.AuthContext{CallerID: NotGuest.Id, JWT: "jwt"} // NotGuest has role "host"
 	targetID := uint(55)
@@ -87,7 +87,7 @@ func TestDeleteRating_Unauthorized_NotGuest(t *testing.T) {
 }
 
 func TestDeleteRating_InvalidTargetID(t *testing.T) {
-	svc, _, users, _, _ := CreateTestRatingService()
+	svc, _, users, _, _, _ := CreateTestRatingService()
 
 	auth := internal.AuthContext{CallerID: DefaultGuest.Id, JWT: "jwt"}
 	targetID := uint(0)
@@ -101,7 +101,7 @@ func TestDeleteRating_InvalidTargetID(t *testing.T) {
 }
 
 func TestDeleteRating_NotFound_ForCaller(t *testing.T) {
-	svc, repo, users, _, _ := CreateTestRatingService()
+	svc, repo, users, _, _, _ := CreateTestRatingService()
 
 	auth := internal.AuthContext{CallerID: DefaultGuest.Id, JWT: "jwt"}
 	targetID := uint(66)
@@ -119,7 +119,7 @@ func TestDeleteRating_NotFound_ForCaller(t *testing.T) {
 }
 
 func TestDeleteRating_NotOwner(t *testing.T) {
-	svc, repo, users, _, _ := CreateTestRatingService()
+	svc, repo, users, _, _, _ := CreateTestRatingService()
 
 	auth := internal.AuthContext{CallerID: DefaultGuest.Id, JWT: "jwt"}
 	targetID := uint(77)
@@ -137,7 +137,7 @@ func TestDeleteRating_NotOwner(t *testing.T) {
 }
 
 func TestDeleteRating_RepoDeleteError(t *testing.T) {
-	svc, repo, users, _, _ := CreateTestRatingService()
+	svc, repo, users, _, _, _ := CreateTestRatingService()
 
 	auth := internal.AuthContext{CallerID: DefaultGuest.Id, JWT: "jwt"}
 	targetID := uint(88)
