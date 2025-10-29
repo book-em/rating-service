@@ -1,9 +1,10 @@
 package test
 
 import (
-	"bookem-rating-service/internal"
-	"bookem-rating-service/client/userclient"
+	"bookem-rating-service/client/notificationclient"
 	"bookem-rating-service/client/roomclient"
+	"bookem-rating-service/client/userclient"
+	"bookem-rating-service/internal"
 	"context"
 	"errors"
 	"testing"
@@ -13,7 +14,7 @@ import (
 )
 
 func Test_CreateHostRating_Success(t *testing.T) {
-	svc, repo, users, _, resCli := CreateTestRatingService()
+	svc, repo, users, _, resCli, notifClient := CreateTestRatingService()
 
 	auth := internal.AuthContext{CallerID: DefaultGuest.Id, JWT: "jwt"}
 	dto := internal.CreateRatingDTO{TargetID: 22, Score: 5, Comment: " great "}
@@ -30,6 +31,8 @@ func Test_CreateHostRating_Success(t *testing.T) {
 	// return stored entity
 	repo.On("FindRatingByRater", internal.Host, dto.TargetID, auth.CallerID).
 		Return(&internal.Rating{ID: 1, TargetType: internal.Host, TargetID: dto.TargetID, RaterID: auth.CallerID, Score: dto.Score, Comment: "great"}, nil)
+	notifClient.On("CreateNotification", mock.Anything, mock.Anything, mock.Anything).
+		Return(&notificationclient.NotificationDTO{}, nil)
 
 	r, err := svc.CreateHostRating(context.Background(), auth, dto)
 
@@ -41,7 +44,7 @@ func Test_CreateHostRating_Success(t *testing.T) {
 }
 
 func Test_CreateRoomRating_Success(t *testing.T) {
-	svc, repo, users, rooms, resCli := CreateTestRatingService()
+	svc, repo, users, rooms, resCli, notifClient := CreateTestRatingService()
 
 	auth := internal.AuthContext{CallerID: DefaultGuest.Id, JWT: "jwt"}
 	dto := internal.CreateRatingDTO{TargetID: 33, Score: 4, Comment: "nice"}
@@ -58,6 +61,8 @@ func Test_CreateRoomRating_Success(t *testing.T) {
 	// fetch stored
 	repo.On("FindRatingByRater", internal.Room, dto.TargetID, auth.CallerID).
 		Return(&internal.Rating{ID: 2, TargetType: internal.Room, TargetID: dto.TargetID, RaterID: auth.CallerID, Score: dto.Score, Comment: "nice"}, nil)
+	notifClient.On("CreateNotification", mock.Anything, mock.Anything, mock.Anything).
+		Return(&notificationclient.NotificationDTO{}, nil)
 
 	r, err := svc.CreateRoomRating(context.Background(), auth, dto)
 
@@ -67,7 +72,7 @@ func Test_CreateRoomRating_Success(t *testing.T) {
 }
 
 func Test_CreateRating_Unauthenticated_CallerLookupFails(t *testing.T) {
-	svc, _, users, _, _ := CreateTestRatingService()
+	svc, _, users, _, _, _ := CreateTestRatingService()
 
 	auth := internal.AuthContext{CallerID: DefaultGuest.Id, JWT: "jwt"}
 	dto := internal.CreateRatingDTO{TargetID: 22, Score: 5}
@@ -80,7 +85,7 @@ func Test_CreateRating_Unauthenticated_CallerLookupFails(t *testing.T) {
 }
 
 func Test_CreateRating_Unauthorized_CallerNotGuest(t *testing.T) {
-	svc, _, users, _, _ := CreateTestRatingService()
+	svc, _, users, _, _, _ := CreateTestRatingService()
 
 	auth := internal.AuthContext{CallerID: NotGuest.Id, JWT: "jwt"} // role=host
 	dto := internal.CreateRatingDTO{TargetID: 22, Score: 5}
@@ -88,12 +93,12 @@ func Test_CreateRating_Unauthorized_CallerNotGuest(t *testing.T) {
 	users.On("FindById", mock.Anything, auth.CallerID).Return(NotGuest, nil)
 
 	r, err := svc.CreateHostRating(context.Background(), auth, dto)
-	assert.Error(t, err) 
+	assert.Error(t, err)
 	assert.Nil(t, r)
 }
 
 func Test_CreateRating_InvalidDTO_TargetMissing(t *testing.T) {
-	svc, _, users, _, _ := CreateTestRatingService()
+	svc, _, users, _, _, _ := CreateTestRatingService()
 
 	auth := internal.AuthContext{CallerID: DefaultGuest.Id, JWT: "jwt"}
 	dto := internal.CreateRatingDTO{TargetID: 0, Score: 5}
@@ -101,12 +106,12 @@ func Test_CreateRating_InvalidDTO_TargetMissing(t *testing.T) {
 	users.On("FindById", mock.Anything, auth.CallerID).Return(DefaultGuest, nil)
 
 	r, err := svc.CreateHostRating(context.Background(), auth, dto)
-	assert.Error(t, err) 
+	assert.Error(t, err)
 	assert.Nil(t, r)
 }
 
 func Test_CreateRating_InvalidDTO_ScoreOutOfRange(t *testing.T) {
-	svc, _, users, _, _ := CreateTestRatingService()
+	svc, _, users, _, _, _ := CreateTestRatingService()
 
 	auth := internal.AuthContext{CallerID: DefaultGuest.Id, JWT: "jwt"}
 	dto := internal.CreateRatingDTO{TargetID: 22, Score: 6}
@@ -114,12 +119,12 @@ func Test_CreateRating_InvalidDTO_ScoreOutOfRange(t *testing.T) {
 	users.On("FindById", mock.Anything, auth.CallerID).Return(DefaultGuest, nil)
 
 	r, err := svc.CreateHostRating(context.Background(), auth, dto)
-	assert.Error(t, err) 
+	assert.Error(t, err)
 	assert.Nil(t, r)
 }
 
 func Test_CreateHostRating_TargetHostNotFound(t *testing.T) {
-	svc, _, users, _, _ := CreateTestRatingService()
+	svc, _, users, _, _, _ := CreateTestRatingService()
 
 	auth := internal.AuthContext{CallerID: DefaultGuest.Id, JWT: "jwt"}
 	dto := internal.CreateRatingDTO{TargetID: 22, Score: 4}
@@ -128,12 +133,12 @@ func Test_CreateHostRating_TargetHostNotFound(t *testing.T) {
 	users.On("FindById", mock.Anything, dto.TargetID).Return(nil, errors.New("not found"))
 
 	r, err := svc.CreateHostRating(context.Background(), auth, dto)
-	assert.Error(t, err) 
+	assert.Error(t, err)
 	assert.Nil(t, r)
 }
 
 func Test_CreateHostRating_TargetNotHostRole(t *testing.T) {
-	svc, _, users, _, _ := CreateTestRatingService()
+	svc, _, users, _, _, _ := CreateTestRatingService()
 
 	auth := internal.AuthContext{CallerID: DefaultGuest.Id, JWT: "jwt"}
 	dto := internal.CreateRatingDTO{TargetID: 22, Score: 4}
@@ -143,12 +148,12 @@ func Test_CreateHostRating_TargetNotHostRole(t *testing.T) {
 		Return(&userclient.UserDTO{Id: dto.TargetID, Username: "x", Role: "guest"}, nil)
 
 	r, err := svc.CreateHostRating(context.Background(), auth, dto)
-	assert.Error(t, err) 
+	assert.Error(t, err)
 	assert.Nil(t, r)
 }
 
 func Test_CreateHostRating_EligibilityError(t *testing.T) {
-	svc, _, users, _, resCli := CreateTestRatingService()
+	svc, _, users, _, resCli, _ := CreateTestRatingService()
 
 	auth := internal.AuthContext{CallerID: DefaultGuest.Id, JWT: "jwt"}
 	dto := internal.CreateRatingDTO{TargetID: 22, Score: 4}
@@ -165,7 +170,7 @@ func Test_CreateHostRating_EligibilityError(t *testing.T) {
 }
 
 func Test_CreateHostRating_NotEligible(t *testing.T) {
-	svc, _, users, _, resCli := CreateTestRatingService()
+	svc, _, users, _, resCli, _ := CreateTestRatingService()
 
 	auth := internal.AuthContext{CallerID: DefaultGuest.Id, JWT: "jwt"}
 	dto := internal.CreateRatingDTO{TargetID: 22, Score: 4}
@@ -177,12 +182,12 @@ func Test_CreateHostRating_NotEligible(t *testing.T) {
 		Return(false, nil)
 
 	r, err := svc.CreateHostRating(context.Background(), auth, dto)
-	assert.Error(t, err) 
+	assert.Error(t, err)
 	assert.Nil(t, r)
 }
 
 func Test_CreateRoomRating_RoomNotFound(t *testing.T) {
-	svc, _, users, rooms, _ := CreateTestRatingService()
+	svc, _, users, rooms, _, _ := CreateTestRatingService()
 
 	auth := internal.AuthContext{CallerID: DefaultGuest.Id, JWT: "jwt"}
 	dto := internal.CreateRatingDTO{TargetID: 33, Score: 4}
@@ -191,12 +196,12 @@ func Test_CreateRoomRating_RoomNotFound(t *testing.T) {
 	rooms.On("FindById", mock.Anything, dto.TargetID).Return(nil, errors.New("no room"))
 
 	r, err := svc.CreateRoomRating(context.Background(), auth, dto)
-	assert.Error(t, err) 
+	assert.Error(t, err)
 	assert.Nil(t, r)
 }
 
 func Test_CreateRoomRating_EligibilityError(t *testing.T) {
-	svc, _, users, rooms, resCli := CreateTestRatingService()
+	svc, _, users, rooms, resCli, _ := CreateTestRatingService()
 
 	auth := internal.AuthContext{CallerID: DefaultGuest.Id, JWT: "jwt"}
 	dto := internal.CreateRatingDTO{TargetID: 33, Score: 3}
@@ -213,7 +218,7 @@ func Test_CreateRoomRating_EligibilityError(t *testing.T) {
 }
 
 func Test_CreateRoomRating_NotEligible(t *testing.T) {
-	svc, _, users, rooms, resCli := CreateTestRatingService()
+	svc, _, users, rooms, resCli, _ := CreateTestRatingService()
 
 	auth := internal.AuthContext{CallerID: DefaultGuest.Id, JWT: "jwt"}
 	dto := internal.CreateRatingDTO{TargetID: 33, Score: 3}
@@ -225,12 +230,12 @@ func Test_CreateRoomRating_NotEligible(t *testing.T) {
 		Return(false, nil)
 
 	r, err := svc.CreateRoomRating(context.Background(), auth, dto)
-	assert.Error(t, err) 
+	assert.Error(t, err)
 	assert.Nil(t, r)
 }
 
 func Test_CreateRating_RepoUpsertError(t *testing.T) {
-	svc, repo, users, rooms, resCli := CreateTestRatingService()
+	svc, repo, users, rooms, resCli, _ := CreateTestRatingService()
 
 	auth := internal.AuthContext{CallerID: DefaultGuest.Id, JWT: "jwt"}
 	dto := internal.CreateRatingDTO{TargetID: 33, Score: 5, Comment: "x"}
@@ -249,7 +254,7 @@ func Test_CreateRating_RepoUpsertError(t *testing.T) {
 }
 
 func Test_CreateRating_RepoFindAfterUpsertError(t *testing.T) {
-	svc, repo, users, rooms, resCli := CreateTestRatingService()
+	svc, repo, users, rooms, resCli, _ := CreateTestRatingService()
 
 	auth := internal.AuthContext{CallerID: DefaultGuest.Id, JWT: "jwt"}
 	dto := internal.CreateRatingDTO{TargetID: 33, Score: 5, Comment: "x"}

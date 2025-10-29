@@ -1,13 +1,14 @@
 package internal
 
 import (
+	"bookem-rating-service/client/notificationclient"
+	"bookem-rating-service/client/reservationclient"
 	"bookem-rating-service/client/roomclient"
 	"bookem-rating-service/client/userclient"
-	"bookem-rating-service/client/reservationclient"
 	"bookem-rating-service/util"
 
-	"strings"
 	"context"
+	"strings"
 )
 
 // AuthContext is used in cases where callerID is not enough
@@ -17,19 +18,20 @@ type AuthContext struct {
 }
 
 type Service interface {
-    CreateHostRating(ctx context.Context, authctx AuthContext, dto CreateRatingDTO) (*Rating, error)
-    CreateRoomRating(ctx context.Context, authctx AuthContext, dto CreateRatingDTO) (*Rating, error)
-	DeleteHostRating(ctx context.Context, authctx AuthContext, targetID uint) error 
+	CreateHostRating(ctx context.Context, authctx AuthContext, dto CreateRatingDTO) (*Rating, error)
+	CreateRoomRating(ctx context.Context, authctx AuthContext, dto CreateRatingDTO) (*Rating, error)
+	DeleteHostRating(ctx context.Context, authctx AuthContext, targetID uint) error
 	DeleteRoomRating(ctx context.Context, authctx AuthContext, targetID uint) error
-	GetRoomRatings(ctx context.Context, _ AuthContext, roomID uint) (*RatingsWithAverageDTO, error) 
-	GetHostRatings(ctx context.Context, _ AuthContext, hostID uint) (*RatingsWithAverageDTO, error) 
+	GetRoomRatings(ctx context.Context, _ AuthContext, roomID uint) (*RatingsWithAverageDTO, error)
+	GetHostRatings(ctx context.Context, _ AuthContext, hostID uint) (*RatingsWithAverageDTO, error)
 }
 
 type service struct {
-	repo       Repository
-	userClient userclient.UserClient
-	roomClient roomclient.RoomClient
-	reservationClient reservationclient.ReservationClient
+	repo               Repository
+	userClient         userclient.UserClient
+	roomClient         roomclient.RoomClient
+	reservationClient  reservationclient.ReservationClient
+	notificationClient notificationclient.NotificationClient
 }
 
 func NewService(
@@ -37,8 +39,9 @@ func NewService(
 	userClient userclient.UserClient,
 	roomClient roomclient.RoomClient,
 	reservationClient reservationclient.ReservationClient,
-	) Service {
-	return &service{roomRepo, userClient, roomClient, reservationClient}
+	notificationClient notificationclient.NotificationClient,
+) Service {
+	return &service{roomRepo, userClient, roomClient, reservationClient, notificationClient}
 }
 
 func (s *service) CreateHostRating(ctx context.Context, authctx AuthContext, dto CreateRatingDTO) (*Rating, error) {
@@ -68,7 +71,7 @@ func (s *service) createRating(ctx context.Context, authctx AuthContext, rt Rati
 		return nil, ErrUnauthorized
 	}
 
-	// DTO validation 
+	// DTO validation
 	util.TEL.Push(ctx, "validate-dto")
 	defer util.TEL.Pop()
 
@@ -85,6 +88,7 @@ func (s *service) createRating(ctx context.Context, authctx AuthContext, rt Rati
 	util.TEL.Push(ctx, "validate-target-exists")
 	defer util.TEL.Pop()
 
+	receiverId := uint(0)
 	switch rt {
 	case Host:
 		util.TEL.Debug("check if host exists", nil, "id", dto.TargetID)
@@ -107,6 +111,7 @@ func (s *service) createRating(ctx context.Context, authctx AuthContext, rt Rati
 			util.TEL.Error("guest not eligible to rate host", nil, "guest_id", callerID, "host_id", dto.TargetID)
 			return nil, ErrBadRequestCustom("guest not eligible to rate host")
 		}
+		receiverId = host.Id
 	case Room:
 		util.TEL.Debug("check if room exists", nil, "id", dto.TargetID)
 		room, err := s.roomClient.FindById(util.TEL.Ctx(), dto.TargetID)
@@ -128,11 +133,12 @@ func (s *service) createRating(ctx context.Context, authctx AuthContext, rt Rati
 			util.TEL.Error("guest not eligible to rate room", nil, "guest_id", callerID, "room_id", dto.TargetID)
 			return nil, ErrBadRequestCustom("guest not eligible to rate room")
 		}
+		receiverId = room.HostID
 	default:
 		return nil, ErrBadRequestCustom("invalid rating type")
 	}
 
-	// Upsert rating in DB 
+	// Upsert rating in DB
 	util.TEL.Push(ctx, "upsert-rating-in-db")
 	defer util.TEL.Pop()
 
@@ -152,6 +158,27 @@ func (s *service) createRating(ctx context.Context, authctx AuthContext, rt Rati
 		util.TEL.Info("rating created", "rating_id", r.ID, "target_type", string(rt), "target_id", dto.TargetID, "rater_id", callerID)
 	} else {
 		util.TEL.Info("rating updated", "rating_id", r.ID, "target_type", string(rt), "target_id", dto.TargetID, "rater_id", callerID)
+	}
+
+	util.TEL.Push(ctx, "create-notification")
+	defer util.TEL.Pop()
+
+	notificationType := notificationclient.HostReviewed
+	if rt == Room {
+		notificationType = notificationclient.RoomReviewed
+	}
+
+	createNotifDTO := notificationclient.CreateNotificationDTO{
+		ReceiverID:  receiverId, // Host receives the notification
+		Type:        notificationType,
+		Subject:     r.RaterID,
+		Object:      r.TargetID,
+		StarsNumber: r.Score,
+	}
+
+	if _, err := s.notificationClient.CreateNotification(util.TEL.Ctx(), authctx.JWT, createNotifDTO); err != nil {
+		util.TEL.Error("failed to send notification to host", err, "host_id", receiverId)
+		// not returning error – notification failures shouldn’t break reservation creation
 	}
 
 	return r, nil
@@ -286,4 +313,3 @@ func (s *service) getRatings(ctx context.Context, rt RatingType, targetID uint) 
 		Ratings: out,
 	}, nil
 }
-

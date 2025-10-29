@@ -1,6 +1,7 @@
 package test
 
 import (
+	"bookem-rating-service/client/notificationclient"
 	"bookem-rating-service/client/roomclient"
 	"bookem-rating-service/client/userclient"
 	"bookem-rating-service/internal"
@@ -16,14 +17,16 @@ func CreateTestRatingService() (
 	*MockUserClient,
 	*MockRoomClient,
 	*MockReservationClient,
+	*MockNotificationClient,
 ) {
 	mockRepo := new(MockRatingRepo)
 	mockUserClient := new(MockUserClient)
 	mockRoomClient := new(MockRoomClient)
 	mockReservationClient := new(MockReservationClient)
+	mockNotificationClient := new(MockNotificationClient)
 
-	svc := internal.NewService(mockRepo, mockUserClient, mockRoomClient, mockReservationClient)
-	return svc, mockRepo, mockUserClient, mockRoomClient, mockReservationClient
+	svc := internal.NewService(mockRepo, mockUserClient, mockRoomClient, mockReservationClient, mockNotificationClient)
+	return svc, mockRepo, mockUserClient, mockRoomClient, mockReservationClient, mockNotificationClient
 }
 
 // ------------------------------- Mock repo
@@ -120,7 +123,17 @@ func (r *MockRoomClient) FindByHostId(context context.Context, id uint) ([]roomc
 	return room, args.Error(1)
 }
 
+// ----------------------------------------------- Mock notification client
 
+type MockNotificationClient struct {
+	mock.Mock
+}
+
+func (m *MockNotificationClient) CreateNotification(ctx context.Context, jwt string, dto notificationclient.CreateNotificationDTO) (*notificationclient.NotificationDTO, error) {
+	args := m.Called(ctx, jwt, dto)
+	notification, _ := args.Get(0).(*notificationclient.NotificationDTO)
+	return notification, args.Error(1)
+}
 
 // ------------------------------- Mock reservation client (not used in delete but required)
 
@@ -161,7 +174,6 @@ var NotGuest = &userclient.UserDTO{
 }
 
 var SampleRatings = []internal.Rating{
-	{ID: 1, TargetType: internal.Host, TargetID: 22, RaterID: 10, Score: 5, Comment: "great",  CreatedAt: time.Now().Add(-48 * time.Hour)},
-	{ID: 2, TargetType: internal.Host, TargetID: 22, RaterID: 99, Score: 3, Comment: "ok",     UpdatedAt: time.Now().Add(-24 * time.Hour)},
+	{ID: 1, TargetType: internal.Host, TargetID: 22, RaterID: 10, Score: 5, Comment: "great", CreatedAt: time.Now().Add(-48 * time.Hour)},
+	{ID: 2, TargetType: internal.Host, TargetID: 22, RaterID: 99, Score: 3, Comment: "ok", UpdatedAt: time.Now().Add(-24 * time.Hour)},
 }
-
